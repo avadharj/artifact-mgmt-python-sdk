@@ -62,3 +62,7 @@ dmypy.json
 # IDE
 .idea/
 .vscode/
+
+# Claude Code
+.claude/
+CLAUDE.md
