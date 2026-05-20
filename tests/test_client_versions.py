@@ -436,3 +436,100 @@ class TestUploadArtifact:
             responses_lib.calls[0].request.headers["Content-Type"]
             == "application/octet-stream"
         )
+
+
+# ---------------------------------------------------------------------------
+# Story 2.4 — _confirm_version
+# ---------------------------------------------------------------------------
+
+RAW_READY_VERSION = {
+    "modelName": "fraud-detector",
+    "version": "1.0",
+    "status": "READY",
+    "depSnapshot": RAW_DEP_SNAPSHOT,
+    "createdAt": "2024-01-01T00:00:00Z",
+    "downloadUrl": "https://s3.example.com/weights",
+}
+
+
+class TestConfirmVersion:
+    @responses_lib.activate
+    def test_confirm_version_uses_put_method(self, client: ArtifactMgmtClient) -> None:
+        responses_lib.add(
+            responses_lib.PUT,
+            BASE_URL + "/models/fraud-detector/versions/1.0/confirm",
+            json=RAW_READY_VERSION,
+            status=200,
+        )
+        client._confirm_version("fraud-detector", "1.0")
+        assert responses_lib.calls[0].request.method == "PUT"
+
+    @responses_lib.activate
+    def test_confirm_version_sends_empty_json_body(
+        self, client: ArtifactMgmtClient
+    ) -> None:
+        responses_lib.add(
+            responses_lib.PUT,
+            BASE_URL + "/models/fraud-detector/versions/1.0/confirm",
+            json=RAW_READY_VERSION,
+            status=200,
+        )
+        client._confirm_version("fraud-detector", "1.0")
+        assert json.loads(responses_lib.calls[0].request.body) == {}
+
+    @responses_lib.activate
+    def test_confirm_version_returns_ready_version(
+        self, client: ArtifactMgmtClient
+    ) -> None:
+        responses_lib.add(
+            responses_lib.PUT,
+            BASE_URL + "/models/fraud-detector/versions/1.0/confirm",
+            json=RAW_READY_VERSION,
+            status=200,
+        )
+        version = client._confirm_version("fraud-detector", "1.0")
+        assert isinstance(version, Version)
+        assert version.status == "READY"
+        assert version.version == "1.0"
+
+    @responses_lib.activate
+    def test_confirm_version_uses_dotted_version_string_in_path(
+        self, client: ArtifactMgmtClient
+    ) -> None:
+        responses_lib.add(
+            responses_lib.PUT,
+            BASE_URL + "/models/fraud-detector/versions/2.3/confirm",
+            json={**RAW_READY_VERSION, "version": "2.3"},
+            status=200,
+        )
+        version = client._confirm_version("fraud-detector", "2.3")
+        assert "/versions/2.3/confirm" in responses_lib.calls[0].request.url
+        assert version.version == "2.3"
+
+    @responses_lib.activate
+    def test_confirm_version_raises_upload_not_found_when_s3_object_absent(
+        self, client: ArtifactMgmtClient
+    ) -> None:
+        from artifact_mgmt._exceptions import UploadNotFoundError
+        responses_lib.add(
+            responses_lib.PUT,
+            BASE_URL + "/models/fraud-detector/versions/1.0/confirm",
+            json={"code": "UploadNotFound", "message": "object not in S3"},
+            status=404,
+        )
+        with pytest.raises(UploadNotFoundError):
+            client._confirm_version("fraud-detector", "1.0")
+
+    @responses_lib.activate
+    def test_confirm_version_raises_checksum_mismatch_on_409(
+        self, client: ArtifactMgmtClient
+    ) -> None:
+        from artifact_mgmt._exceptions import ChecksumMismatchError
+        responses_lib.add(
+            responses_lib.PUT,
+            BASE_URL + "/models/fraud-detector/versions/1.0/confirm",
+            json={"code": "ChecksumMismatch", "message": "checksum mismatch"},
+            status=409,
+        )
+        with pytest.raises(ChecksumMismatchError):
+            client._confirm_version("fraud-detector", "1.0")

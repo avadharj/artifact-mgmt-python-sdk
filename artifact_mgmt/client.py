@@ -180,3 +180,13 @@ class ArtifactMgmtClient:
     ) -> None:
         _ = checksum_sha256  # checksum already sent to service at create_version time
         self._http.upload(upload_url, data)
+
+    # ------------------------------------------------------------------
+    # ConfirmVersion (internal — called by save_model)
+    # ------------------------------------------------------------------
+
+    def _confirm_version(self, model_name: str, version: str) -> Version:
+        raw = self._http.request(
+            "PUT", f"/models/{model_name}/versions/{version}/confirm", body={}
+        )
+        return _parse_version(raw)
