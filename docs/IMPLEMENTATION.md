@@ -800,6 +800,35 @@ mypy: `strict = true`, `ignore_missing_imports = true` (framework stubs are opti
 
 ---
 
+#### Story 7.3 — Brazil-style dependency pinning [S]
+
+**Files:** `requirements.in`, `requirements.txt`, `requirements-dev.in`, `requirements-dev.txt`
+
+Lock every dependency to an exact hash-pinned version using `pip-tools` so that installs are bit-for-bit reproducible across machines and CI runs. This mirrors the pinning strategy used in the backend service (Gradle lockfiles for Java, `npm ci` for TypeScript).
+
+**Implementation notes:**
+- Add `pip-tools` to the `dev` extras in `pyproject.toml`.
+- Create `requirements.in` listing only the three base deps (`requests`, `requests-aws4auth`, `boto3`) without version ranges.
+- Create `requirements-dev.in` that includes `-r requirements.in` plus all dev extras.
+- Run `pip-compile --generate-hashes requirements.in -o requirements.txt` and `pip-compile --generate-hashes requirements-dev.in -o requirements-dev.txt` to produce hash-pinned lockfiles.
+- Commit both `.in` source files and both generated `.txt` lockfiles.
+- Add a CI step after install that runs `pip-compile --generate-hashes requirements.in -o /tmp/req-check.txt && diff requirements.txt /tmp/req-check.txt` — fails if lockfile is stale.
+- Framework extras (torch, transformers, etc.) are intentionally excluded from the lockfile — they are user-controlled optional installs.
+
+**Why this matters:**
+- A silent patch release of `requests` or `boto3` cannot break a scientist's environment unexpectedly.
+- Every CI run uses the exact dependency graph that was tested, not "latest compatible."
+- Onboarding a new machine or container always produces an identical environment.
+
+**AC:**
+- `pip install -r requirements.txt` installs base deps at pinned versions with hash verification
+- `pip install -r requirements-dev.txt` installs dev environment at pinned versions
+- CI fails if `requirements.txt` is out of date relative to `requirements.in`
+- Adding a new base dependency without re-running `pip-compile` causes CI to fail
+- Framework optional extras are not included in the lockfiles
+
+---
+
 ## Sequencing
 
 | Phase | Stories | Days | Notes |
@@ -811,9 +840,9 @@ mypy: `strict = true`, `ignore_missing_imports = true` (framework stubs are opti
 | 4 | 4.1 | 0.5 | Snapshot — unblocks save_model |
 | 5 | 5.1 → 5.3 | 1 | ArtifactModel — unblocks load_model |
 | 6 | 6.1 → 6.3 | 1.5 | High-level API — the visible surface |
-| 7 | 7.1 → 7.2 | 0.5 | Packaging + CI (coverage gate enforced here) |
+| 7 | 7.1 → 7.3 | 1 | Packaging + CI + dependency pinning |
 
-**Total: ~8 working days**
+**Total: ~8.5 working days**
 
 **Coverage enforcement summary:** every story targets ≥ 90% on its own files; Story 7.2 wires `--cov-fail-under=90` as a global CI hard gate. `pytest-cov>=5.0` is required in the `dev` extras.
 
