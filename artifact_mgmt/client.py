@@ -4,7 +4,7 @@ import base64
 import hashlib
 import os
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import requests as _requests
 
@@ -15,8 +15,7 @@ from artifact_mgmt._snapshot import capture as _capture_snapshot
 from artifact_mgmt._types import Model, DepSnapshot, FrameworkInfo, Version
 from artifact_mgmt.serializers import SerializerRegistry
 
-if TYPE_CHECKING:
-    from artifact_mgmt._cache import ModelCache
+from artifact_mgmt._cache import ModelCache
 
 _STAGE_ENDPOINTS: dict[str, str] = {
     "alpha": "https://pi5ywcu3ub.execute-api.us-east-1.amazonaws.com/alpha",
@@ -79,7 +78,7 @@ class ArtifactMgmtClient:
             endpoint_url = _STAGE_ENDPOINTS[resolved_stage]
         self._http = HttpClient(endpoint_url)
         self._cache_dir = cache_dir
-        self._cache: ModelCache | None = None
+        self._cache: ModelCache | None = ModelCache(cache_dir) if cache_dir else None
 
     # ------------------------------------------------------------------
     # Model CRUD
@@ -254,7 +253,7 @@ class ArtifactMgmtClient:
         if self._cache is not None:
             cached = self._cache.get(model_name, version_obj.version)
             if cached is not None:
-                return cached  # type: ignore[no-any-return]
+                return cached
 
         response = _requests.get(version_obj.download_url or "")
         response.raise_for_status()
