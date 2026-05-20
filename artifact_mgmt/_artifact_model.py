@@ -47,6 +47,9 @@ class ArtifactModel:
     def fine_tune_params(self) -> list:  # type: ignore[type-arg]
         return self._serializer.fine_tune_params(self._model)
 
+    def predict(self, X: object) -> object:
+        return self._serializer.predict(self._model, X)
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self._model, name)
 
