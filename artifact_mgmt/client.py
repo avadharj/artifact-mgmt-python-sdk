@@ -134,3 +134,49 @@ class ArtifactMgmtClient:
 
     def delete_version(self, model_name: str, version: str) -> None:
         self._http.request("DELETE", f"/models/{model_name}/versions/{version}")
+
+    # ------------------------------------------------------------------
+    # Version create + upload (internal — called by save_model)
+    # ------------------------------------------------------------------
+
+    def _create_version(
+        self,
+        model_name: str,
+        *,
+        idempotency_key: str,
+        dep_snapshot: DepSnapshot,
+        major: int | None = None,
+        checksum_sha256: str | None = None,
+    ) -> Version:
+        body: dict[str, object] = {
+            "idempotencyKey": idempotency_key,
+            "depSnapshot": {
+                "pythonVersion": dep_snapshot.python_version,
+                "framework": {
+                    "name": dep_snapshot.framework.name,
+                    "version": dep_snapshot.framework.version,
+                },
+                "packages": dep_snapshot.packages,
+                "os": dep_snapshot.os,
+                "capturedAt": dep_snapshot.captured_at,
+                **({"cudaVersion": dep_snapshot.cuda_version} if dep_snapshot.cuda_version else {}),
+            },
+        }
+        if major is not None:
+            body["major"] = major
+        if checksum_sha256 is not None:
+            body["checksumSha256"] = checksum_sha256
+
+        raw = self._http.request(
+            "POST", f"/models/{model_name}/versions", body=body
+        )
+        return _parse_version(raw)
+
+    def _upload_artifact(
+        self,
+        upload_url: str,
+        data: bytes,
+        checksum_sha256: str | None = None,
+    ) -> None:
+        _ = checksum_sha256  # checksum already sent to service at create_version time
+        self._http.upload(upload_url, data)
