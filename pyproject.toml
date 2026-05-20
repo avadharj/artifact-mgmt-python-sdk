@@ -51,6 +51,18 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["artifact_mgmt"]
 
+[tool.pytest.ini_options]
+addopts = "--cov=artifact_mgmt --cov-report=term-missing --cov-fail-under=90"
+
+[tool.coverage.run]
+omit = [
+    "artifact_mgmt/serializers/_tensorflow.py",
+]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
