@@ -11,8 +11,9 @@ The primary public API is two methods — `save_model()` and `load_model()` — 
 - Serialization backends: PyTorch/Lightning, HuggingFace Transformers, sklearn, TF/Keras, pickle fallback
 - `dep_snapshot` is auto-captured at save time; scientist can pass overrides for specific fields
 - Local disk cache is opt-in via `cache_dir=` constructor arg or `ARTIFACT_MGMT_CACHE_DIR` env var
-- Stage configured via `ArtifactMgmtClient(stage="gamma")`; falls back to `ARTIFACT_MGMT_STAGE` env var
+- Stage configured via `ArtifactMgmtClient(stage="gamma")`; falls back to `ARTIFACT_MGMT_STAGE` env var. Supported named stages: `alpha`, `gamma`, `prod`. (`beta` is an internal pipeline stage, not scientist-facing.)
 - AWS credentials via boto3 default chain (env vars → `~/.aws/credentials` → IAM role)
+- `promote_model()` is the cross-stage promotion primitive — it loads from a source stage and saves to a destination stage in one call. Each stage is a fully isolated silo (separate DDB tables + S3 bucket); there is no automatic cross-stage sync.
 
 **Live API gotchas:**
 - `ListModels` response key is `"items"`, `ListVersions` is `"versions"`
@@ -71,6 +72,7 @@ from artifact_mgmt import ArtifactMgmtClient
 
 # --- Client setup ---
 client = ArtifactMgmtClient(stage="gamma")                          # resolves endpoint internally
+client = ArtifactMgmtClient(stage="prod")                           # prod stage
 client = ArtifactMgmtClient(stage="gamma", cache_dir="~/.artifact-mgmt/cache")
 client = ArtifactMgmtClient(endpoint_url="https://...")            # custom deployment
 
@@ -80,6 +82,13 @@ artifact = client.load_model("fraud-detector", version="2.1")       # specific v
 client.save_model(model, "fraud-detector")                          # minor bump, auto snapshot
 client.save_model(model, "fraud-detector", major=2)                 # major bump
 client.save_model(model, "fraud-detector", dep_snapshot={"cudaVersion": "12.1-custom"})
+
+# --- Cross-stage promotion ---
+gamma_client = ArtifactMgmtClient(stage="gamma")
+prod_client = ArtifactMgmtClient(stage="prod")
+prod_version = gamma_client.promote_model(
+    "fraud-detector", version="2.1", dest=prod_client
+)                                                                    # -> version string in prod
 
 # --- ArtifactModel wrapper ---
 artifact.model                        # native nn.Module / PreTrainedModel / etc
@@ -800,7 +809,83 @@ mypy: `strict = true`, `ignore_missing_imports = true` (framework stubs are opti
 
 ---
 
-#### Story 7.3 — Brazil-style dependency pinning [S]
+#### Story 7.3 — prod endpoint + promote_model [M]
+
+**Files:** `artifact_mgmt/client.py`, `artifact_mgmt/CLAUDE.md` (endpoint table)
+
+**Background:** Each stage (alpha, gamma, prod) is a fully isolated silo — separate DDB tables, separate S3 bucket, no automatic cross-stage data sharing. The SDK currently only exposes `alpha` and `gamma` as named stages. `prod` exists and is deployed by the pipeline but its URL was never captured as a named constant, leaving scientists with no way to target prod without manually looking up the CloudFormation stack output. `promote_model` is the convenience primitive that addresses the cross-stage workflow: validate in gamma, promote to prod in one call.
+
+**Implementation notes:**
+
+Add `prod` to `_STAGE_ENDPOINTS` (look up the actual URL from the `ArtifactMgmt-Api-prod` CloudFormation stack output — key `ApiUrl`):
+
+```python
+_STAGE_ENDPOINTS: dict[str, str] = {
+    "alpha": "https://pi5ywcu3ub.execute-api.us-east-1.amazonaws.com/alpha",
+    "gamma": "https://idco76hrk9.execute-api.us-east-1.amazonaws.com/gamma",
+    "prod":  "https://<prod-api-id>.execute-api.us-east-1.amazonaws.com/prod",  # fill in from CF output
+}
+```
+
+Add `promote_model` to `ArtifactMgmtClient`:
+
+```python
+def promote_model(
+    self,
+    model_name: str,
+    *,
+    version: str | None = None,
+    dest: "ArtifactMgmtClient",
+    major: int | None = None,
+) -> str:
+    """
+    Load a model version from this client's stage and save it to dest's stage.
+    Returns the new version string in the destination stage.
+
+    Typical usage:
+        gamma_client.promote_model("fraud-detector", version="2.1", dest=prod_client)
+    """
+```
+
+Orchestration:
+1. `self.get_version(model_name, version)` or `self.get_latest_version(model_name)` → `Version` with `download_url`
+2. `requests.get(version.download_url)` → raw bytes (no SigV4 — presigned GET)
+3. `dest.save_model_bytes(bytes, model_name, dep_snapshot=version.dep_snapshot, major=major)` — internal method that skips serialization and snapshot capture, using the already-serialized bytes and existing dep_snapshot directly
+4. Return the new version string
+
+Add internal `save_model_bytes` to avoid re-serializing bytes that are already in wire format:
+
+```python
+def _save_model_bytes(
+    self,
+    data: bytes,
+    model_name: str,
+    *,
+    dep_snapshot: DepSnapshot,
+    major: int | None = None,
+) -> str:
+    """Skip serialization — used by promote_model with already-serialized bytes."""
+```
+
+**Key design decisions:**
+- `promote_model` lives on the *source* client (`gamma_client.promote_model(..., dest=prod_client)`) — reads from self, writes to dest. This is natural: the scientist is promoting *from* gamma.
+- The promoted version gets a fresh version number in the destination stage (minor bump by default, or `major=` override). It does NOT attempt to preserve the same version string — version numbers are stage-local counters.
+- The dep_snapshot from the source version is carried over unchanged — the promoted artifact was built in the same environment.
+- `promote_model` does NOT create the model in the destination if it doesn't exist — the scientist must call `dest.create_model(...)` first. This keeps `promote_model` single-purpose and avoids silent model creation in prod.
+
+**AC:**
+- `gamma_client.promote_model("fraud-detector", version="2.1", dest=prod_client)` returns a version string (e.g. `"1.0"`)
+- `promote_model` without `version=` promotes the latest READY version from the source stage
+- The bytes downloaded from source are uploaded unchanged to the destination (no re-serialization)
+- The dep_snapshot from the source version is preserved in the destination version
+- `promote_model` raises `ModelNotFoundError` if the model doesn't exist in the destination stage (no silent creation)
+- `promote_model` raises `VersionNotFoundError` if the requested version doesn't exist or has no READY status in source
+- Unit tests mock both source and dest HTTP with `responses` library
+- Coverage ≥ 90% on `promote_model` and `_save_model_bytes` paths
+
+---
+
+#### Story 7.4 — Brazil-style dependency pinning [S]
 
 **Files:** `requirements.in`, `requirements.txt`, `requirements-dev.in`, `requirements-dev.txt`
 
@@ -840,9 +925,9 @@ Lock every dependency to an exact hash-pinned version using `pip-tools` so that 
 | 4 | 4.1 | 0.5 | Snapshot — unblocks save_model |
 | 5 | 5.1 → 5.3 | 1 | ArtifactModel — unblocks load_model |
 | 6 | 6.1 → 6.3 | 1.5 | High-level API — the visible surface |
-| 7 | 7.1 → 7.3 | 1 | Packaging + CI + dependency pinning |
+| 7 | 7.1 → 7.4 | 1.5 | Packaging + CI + prod endpoint + promote_model + dependency pinning |
 
-**Total: ~8.5 working days**
+**Total: ~9 working days**
 
 **Coverage enforcement summary:** every story targets ≥ 90% on its own files; Story 7.2 wires `--cov-fail-under=90` as a global CI hard gate. `pytest-cov>=5.0` is required in the `dev` extras.
 
