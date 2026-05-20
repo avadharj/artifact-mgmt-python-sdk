@@ -4,13 +4,19 @@ import base64
 import hashlib
 import os
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import requests as _requests
+
+from artifact_mgmt._artifact_model import ArtifactModel
 from artifact_mgmt._http import HttpClient
 from artifact_mgmt._pagination import PageIterator
 from artifact_mgmt._snapshot import capture as _capture_snapshot
 from artifact_mgmt._types import Model, DepSnapshot, FrameworkInfo, Version
 from artifact_mgmt.serializers import SerializerRegistry
+
+if TYPE_CHECKING:
+    from artifact_mgmt._cache import ModelCache
 
 _STAGE_ENDPOINTS: dict[str, str] = {
     "alpha": "https://pi5ywcu3ub.execute-api.us-east-1.amazonaws.com/alpha",
@@ -73,6 +79,7 @@ class ArtifactMgmtClient:
             endpoint_url = _STAGE_ENDPOINTS[resolved_stage]
         self._http = HttpClient(endpoint_url)
         self._cache_dir = cache_dir
+        self._cache: ModelCache | None = None
 
     # ------------------------------------------------------------------
     # Model CRUD
@@ -231,3 +238,40 @@ class ArtifactMgmtClient:
         self._upload_artifact(version_obj.upload_url or "", data, checksum_sha256)
         confirmed = self._confirm_version(model_name, version_obj.version)
         return confirmed.version
+
+    def load_model(
+        self,
+        model_name: str,
+        *,
+        version: str | None = None,
+    ) -> ArtifactModel:
+        """Download and deserialize a model version. Returns ArtifactModel wrapper."""
+        if version is not None:
+            version_obj = self.get_version(model_name, version)
+        else:
+            version_obj = self.get_latest_version(model_name)
+
+        if self._cache is not None:
+            cached = self._cache.get(model_name, version_obj.version)
+            if cached is not None:
+                return cached  # type: ignore[no-any-return]
+
+        response = _requests.get(version_obj.download_url or "")
+        response.raise_for_status()
+        data = response.content
+
+        serializer = SerializerRegistry.detect_from_snapshot(version_obj.dep_snapshot)
+        model: object = serializer.deserialize(data)
+
+        artifact = ArtifactModel(
+            model,
+            model_name=model_name,
+            version=version_obj.version,
+            dep_snapshot=version_obj.dep_snapshot,
+            serializer=serializer,
+        )
+
+        if self._cache is not None:
+            self._cache.put(model_name, version_obj.version, artifact)
+
+        return artifact
