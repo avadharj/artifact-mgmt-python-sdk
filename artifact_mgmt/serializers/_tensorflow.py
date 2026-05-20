@@ -43,7 +43,7 @@ class TensorFlowSerializer(Serializer):
         import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
             with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-                tar.extractall(tmpdir)
+                tar.extractall(tmpdir, filter="data")
             return tf.keras.models.load_model(tmpdir)
 
     def freeze(self, model: object, n_layers: int) -> None:
