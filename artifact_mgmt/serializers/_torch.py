@@ -9,12 +9,11 @@ class TorchSerializer(Serializer):
 
     def can_handle(self, model: object) -> bool:
         try:
-            import torch.nn as nn  # noqa: F401
+            import torch.nn as nn
         except ImportError:
             raise FrameworkNotInstalledError(
                 "torch is not installed. Install it with: pip install artifact-mgmt-client[torch]"
             )
-        import torch.nn as nn
         return isinstance(model, nn.Module)
 
     def serialize(self, model: object) -> bytes:
@@ -33,7 +32,11 @@ class TorchSerializer(Serializer):
         except ImportError:
             raise FrameworkNotInstalledError("torch is not installed.")
         import io
-        return torch.load(io.BytesIO(data), weights_only=False)
+        result = torch.load(io.BytesIO(data), weights_only=False)
+        # Lightning .ckpt: checkpoint dict with state_dict key — extract the model weights
+        if isinstance(result, dict) and "state_dict" in result:
+            return result["state_dict"]
+        return result
 
     def freeze(self, model: object, n_layers: int) -> None:
         try:
@@ -46,7 +49,7 @@ class TorchSerializer(Serializer):
 
     def unfreeze(self, model: object, n_layers: int) -> None:
         try:
-            import torch.nn as nn  # noqa: F401
+            import torch  # noqa: F401
         except ImportError:
             raise FrameworkNotInstalledError("torch is not installed.")
         params = list(model.named_parameters())  # type: ignore[union-attr]
