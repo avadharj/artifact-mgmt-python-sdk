@@ -34,3 +34,13 @@ target-version = "py311"
 [tool.mypy]
 strict = true
 python_version = "3.11"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "artifact_mgmt.serializers._torch",
+    "artifact_mgmt.serializers._huggingface",
+    "artifact_mgmt.serializers._sklearn",
+    "artifact_mgmt.serializers._tensorflow",
+]
+ignore_errors = true

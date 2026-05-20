@@ -4,7 +4,7 @@ from typing import Any
 
 import requests
 import boto3
-from requests_aws4auth import AWS4Auth  # type: ignore[import-untyped]
+from requests_aws4auth import AWS4Auth  # type: ignore[import-untyped,unused-ignore]
 
 from artifact_mgmt._exceptions import (
     AuthError,
