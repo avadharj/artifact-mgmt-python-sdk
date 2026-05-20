@@ -24,6 +24,12 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
+      - name: Check lockfile is up to date
+        run: |
+          pip install pip-tools
+          pip-compile --generate-hashes --allow-unsafe requirements.in -o /tmp/req-check.txt
+          diff <(grep -v '^#' requirements.txt) <(grep -v '^#' /tmp/req-check.txt)
+
       - name: Lint with ruff
         run: ruff check artifact_mgmt tests
 
