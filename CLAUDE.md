@@ -114,11 +114,12 @@ These were discovered by live-testing gamma. They differ from what you'd guess f
 
 **Cache is opt-in** via `ArtifactMgmtClient(cache_dir=...)` or `ARTIFACT_MGMT_CACHE_DIR` env var. Default is `None` (no cache). Never engage the cache unless the client was constructed with a `cache_dir`.
 
-**Stage configuration** — `ArtifactMgmtClient(stage="gamma")` resolves the endpoint internally. Falls back to `ARTIFACT_MGMT_STAGE` env var. Supported stages: `alpha`, `gamma`.
+**Stage configuration** — `ArtifactMgmtClient(stage="gamma")` resolves the endpoint internally. Falls back to `ARTIFACT_MGMT_STAGE` env var. Supported stages: `alpha`, `gamma`, `prod`.
 
 **Endpoint URLs:**
 - Alpha: `https://pi5ywcu3ub.execute-api.us-east-1.amazonaws.com/alpha`
 - Gamma: `https://idco76hrk9.execute-api.us-east-1.amazonaws.com/gamma`
+- Prod: `https://afwtpvnxe7.execute-api.us-east-1.amazonaws.com/prod`
 
 ## Things to ask before doing
 
@@ -176,3 +177,4 @@ By the end of a session you should have:
 5. The sdk-reviewer subagent has returned PASS on the changes.
 
 If you can't get there, surface the blocker rather than declaring partial completion.
+ 

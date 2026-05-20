@@ -9,6 +9,7 @@ from typing import Any
 import requests as _requests
 
 from artifact_mgmt._artifact_model import ArtifactModel
+from artifact_mgmt._exceptions import VersionNotFoundError
 from artifact_mgmt._http import HttpClient
 from artifact_mgmt._pagination import PageIterator
 from artifact_mgmt._snapshot import capture as _capture_snapshot
@@ -20,6 +21,7 @@ from artifact_mgmt._cache import ModelCache
 _STAGE_ENDPOINTS: dict[str, str] = {
     "alpha": "https://pi5ywcu3ub.execute-api.us-east-1.amazonaws.com/alpha",
     "gamma": "https://idco76hrk9.execute-api.us-east-1.amazonaws.com/gamma",
+    "prod": "https://afwtpvnxe7.execute-api.us-east-1.amazonaws.com/prod",
 }
 
 
@@ -274,3 +276,58 @@ class ArtifactMgmtClient:
             self._cache.put(model_name, version_obj.version, artifact)
 
         return artifact
+
+    def _save_model_bytes(
+        self,
+        data: bytes,
+        model_name: str,
+        *,
+        dep_snapshot: DepSnapshot,
+        major: int | None = None,
+    ) -> str:
+        """Skip serialization — used by promote_model with already-serialized bytes."""
+        checksum_sha256 = base64.b64encode(hashlib.sha256(data).digest()).decode()
+        idempotency_key = str(uuid.uuid4())
+        version_obj = self._create_version(
+            model_name,
+            idempotency_key=idempotency_key,
+            dep_snapshot=dep_snapshot,
+            major=major,
+            checksum_sha256=checksum_sha256,
+        )
+        self._upload_artifact(version_obj.upload_url or "", data, checksum_sha256)
+        confirmed = self._confirm_version(model_name, version_obj.version)
+        return confirmed.version
+
+    def promote_model(
+        self,
+        model_name: str,
+        *,
+        version: str | None = None,
+        dest: ArtifactMgmtClient,
+        major: int | None = None,
+    ) -> str:
+        """
+        Load a model version from this client's stage and save it to dest's stage.
+        Returns the new version string in the destination stage.
+
+        Typical usage:
+            gamma_client.promote_model("fraud-detector", version="2.1", dest=prod_client)
+        """
+        if version is not None:
+            source_version = self.get_version(model_name, version)
+        else:
+            source_version = self.get_latest_version(model_name)
+
+        if not source_version.download_url:
+            raise VersionNotFoundError(model_name, version or "latest")
+        response = _requests.get(source_version.download_url)
+        response.raise_for_status()
+        data = response.content
+
+        return dest._save_model_bytes(
+            data,
+            model_name,
+            dep_snapshot=source_version.dep_snapshot,
+            major=major,
+        )
