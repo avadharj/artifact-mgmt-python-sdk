@@ -102,3 +102,35 @@ class ArtifactMgmtClient:
 
     def delete_model(self, model_name: str) -> None:
         self._http.request("DELETE", f"/models/{model_name}")
+
+    # ------------------------------------------------------------------
+    # Version read CRUD
+    # ------------------------------------------------------------------
+
+    def get_version(self, model_name: str, version: str) -> Version:
+        raw = self._http.request("GET", f"/models/{model_name}/versions/{version}")
+        return _parse_version(raw)
+
+    def get_latest_version(self, model_name: str) -> Version:
+        raw = self._http.request("GET", f"/models/{model_name}/versions/latest")
+        return _parse_version(raw)
+
+    def list_versions(
+        self, model_name: str, *, include_pending: bool = False
+    ) -> PageIterator[Version]:
+        def fetch_page(token: str | None) -> tuple[list[Version], str | None]:
+            params: dict[str, str] = {}
+            if token:
+                params["pageToken"] = token
+            if include_pending:
+                params["includePending"] = "true"
+            raw = self._http.request(
+                "GET", f"/models/{model_name}/versions", params=params or None
+            )
+            items = [_parse_version(v) for v in raw.get("versions", [])]
+            return items, raw.get("nextPageToken")
+
+        return PageIterator(fetch_page)
+
+    def delete_version(self, model_name: str, version: str) -> None:
+        self._http.request("DELETE", f"/models/{model_name}/versions/{version}")
