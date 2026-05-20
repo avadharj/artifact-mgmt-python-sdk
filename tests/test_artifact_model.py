@@ -117,6 +117,75 @@ class TestGetattr:
         assert result is None  # only reached via exception path, not silent None return
 
 
+# ---------------------------------------------------------------------------
+# Story 5.2 — freeze / unfreeze / fine_tune_params delegation
+# ---------------------------------------------------------------------------
+
+
+class TestFreeze:
+    def test_delegates_to_serializer_freeze(self, artifact, mock_serializer, native_model):
+        artifact.freeze(3)
+        mock_serializer.freeze.assert_called_once_with(native_model, 3)
+
+    def test_freeze_zero_layers(self, artifact, mock_serializer, native_model):
+        artifact.freeze(0)
+        mock_serializer.freeze.assert_called_once_with(native_model, 0)
+
+    def test_sklearn_backed_model_raises_not_implemented(self, native_model, dep_snapshot):
+        from artifact_mgmt.serializers._sklearn import SklearnSerializer
+        serializer = SklearnSerializer()
+        artifact = ArtifactModel(
+            native_model,
+            model_name="clf",
+            version="1.0",
+            dep_snapshot=dep_snapshot,
+            serializer=serializer,
+        )
+        with pytest.raises(NotImplementedError, match="sklearn estimators do not support layer freezing"):
+            artifact.freeze(2)
+
+
+class TestUnfreeze:
+    def test_delegates_to_serializer_unfreeze(self, artifact, mock_serializer, native_model):
+        artifact.unfreeze(2)
+        mock_serializer.unfreeze.assert_called_once_with(native_model, 2)
+
+    def test_sklearn_backed_model_raises_not_implemented(self, native_model, dep_snapshot):
+        from artifact_mgmt.serializers._sklearn import SklearnSerializer
+        serializer = SklearnSerializer()
+        artifact = ArtifactModel(
+            native_model,
+            model_name="clf",
+            version="1.0",
+            dep_snapshot=dep_snapshot,
+            serializer=serializer,
+        )
+        with pytest.raises(NotImplementedError):
+            artifact.unfreeze(2)
+
+
+class TestFineTuneParams:
+    def test_delegates_to_serializer_fine_tune_params(self, artifact, mock_serializer, native_model):
+        expected = [MagicMock(), MagicMock()]
+        mock_serializer.fine_tune_params.return_value = expected
+        result = artifact.fine_tune_params()
+        mock_serializer.fine_tune_params.assert_called_once_with(native_model)
+        assert result is expected
+
+    def test_sklearn_backed_model_raises_not_implemented(self, native_model, dep_snapshot):
+        from artifact_mgmt.serializers._sklearn import SklearnSerializer
+        serializer = SklearnSerializer()
+        artifact = ArtifactModel(
+            native_model,
+            model_name="clf",
+            version="1.0",
+            dep_snapshot=dep_snapshot,
+            serializer=serializer,
+        )
+        with pytest.raises(NotImplementedError):
+            artifact.fine_tune_params()
+
+
 class TestRepr:
     def test_repr_includes_model_name_and_version(self, artifact):
         r = repr(artifact)

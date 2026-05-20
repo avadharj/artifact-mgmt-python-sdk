@@ -38,6 +38,15 @@ class ArtifactModel:
     def dep_snapshot(self) -> DepSnapshot:
         return self._dep_snapshot
 
+    def freeze(self, n_layers: int) -> None:
+        self._serializer.freeze(self._model, n_layers)
+
+    def unfreeze(self, n_layers: int) -> None:
+        self._serializer.unfreeze(self._model, n_layers)
+
+    def fine_tune_params(self) -> list:  # type: ignore[type-arg]
+        return self._serializer.fine_tune_params(self._model)
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self._model, name)
 
