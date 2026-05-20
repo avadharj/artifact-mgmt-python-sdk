@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import os
+import uuid
+from typing import Any
 
 from artifact_mgmt._http import HttpClient
 from artifact_mgmt._pagination import PageIterator
+from artifact_mgmt._snapshot import capture as _capture_snapshot
 from artifact_mgmt._types import Model, DepSnapshot, FrameworkInfo, Version
+from artifact_mgmt.serializers import SerializerRegistry
 
 _STAGE_ENDPOINTS: dict[str, str] = {
     "alpha": "https://pi5ywcu3ub.execute-api.us-east-1.amazonaws.com/alpha",
@@ -190,3 +196,38 @@ class ArtifactMgmtClient:
             "PUT", f"/models/{model_name}/versions/{version}/confirm", body={}
         )
         return _parse_version(raw)
+
+    # ------------------------------------------------------------------
+    # High-level save_model / load_model
+    # ------------------------------------------------------------------
+
+    def save_model(
+        self,
+        model: object,
+        model_name: str,
+        *,
+        major: int | None = None,
+        dep_snapshot: dict[str, Any] | None = None,
+        serializer: str | None = None,
+    ) -> str:
+        """Serialize, upload, and confirm a new model version. Returns version string e.g. '2.1'."""
+        if serializer is not None:
+            ser = SerializerRegistry.get_by_name(serializer)
+        else:
+            ser = SerializerRegistry.detect(model)
+
+        data = ser.serialize(model)
+        checksum_sha256 = base64.b64encode(hashlib.sha256(data).digest()).decode()
+        snapshot = _capture_snapshot(model, override=dep_snapshot)
+        idempotency_key = str(uuid.uuid4())
+
+        version_obj = self._create_version(
+            model_name,
+            idempotency_key=idempotency_key,
+            dep_snapshot=snapshot,
+            major=major,
+            checksum_sha256=checksum_sha256,
+        )
+        self._upload_artifact(version_obj.upload_url or "", data, checksum_sha256)
+        confirmed = self._confirm_version(model_name, version_obj.version)
+        return confirmed.version
