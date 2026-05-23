@@ -254,6 +254,34 @@ class TestSaveModelSerializerOverride:
         assert result == "1.0"
 
 
+class TestSaveModelChecksumHeader:
+    @responses_lib.activate
+    def test_checksum_header_sent_on_s3_upload(
+        self, client: ArtifactMgmtClient, mock_model: MagicMock,
+        mock_serializer: MagicMock, patched_snapshot: MagicMock
+    ) -> None:
+        data = b"fake-weights"
+        expected_checksum = base64.b64encode(hashlib.sha256(data).digest()).decode()
+
+        responses_lib.add(
+            responses_lib.POST,
+            BASE_URL + "/models/fraud-detector/versions",
+            json=RAW_VERSION_PENDING, status=201,
+        )
+        responses_lib.add(responses_lib.PUT, UPLOAD_URL, body=b"", status=200)
+        responses_lib.add(
+            responses_lib.PUT,
+            BASE_URL + "/models/fraud-detector/versions/1.0/confirm",
+            json=RAW_VERSION_CONFIRMED, status=200,
+        )
+
+        with patch("artifact_mgmt.client.SerializerRegistry.detect", return_value=mock_serializer):
+            client.save_model(mock_model, "fraud-detector")
+
+        upload_request = responses_lib.calls[1].request
+        assert upload_request.headers.get("x-amz-checksum-sha256") == expected_checksum
+
+
 class TestSaveModelDepSnapshotOverride:
     @responses_lib.activate
     def test_dep_snapshot_override_merged_into_snapshot(

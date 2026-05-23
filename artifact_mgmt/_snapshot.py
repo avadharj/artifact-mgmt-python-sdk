@@ -7,11 +7,18 @@ from typing import Any
 
 from artifact_mgmt._types import DepSnapshot, FrameworkInfo
 from artifact_mgmt.serializers import SerializerRegistry
+from artifact_mgmt.serializers._base import Serializer
 
 
-def capture(model: object, override: dict[str, Any] | None = None) -> DepSnapshot:
+def capture(
+    model: object,
+    override: dict[str, Any] | None = None,
+    *,
+    serializer: Serializer | None = None,
+) -> DepSnapshot:
     """Inspect the current Python environment and return a DepSnapshot."""
-    serializer = SerializerRegistry.detect(model)
+    if serializer is None:
+        serializer = SerializerRegistry.detect(model)
     framework_name = serializer.framework_name
 
     _meta = importlib.metadata

@@ -52,12 +52,25 @@ def _parse_model(raw: dict) -> Model:  # type: ignore[type-arg]
 
 
 def _parse_version(raw: dict) -> Version:  # type: ignore[type-arg]
+    # CreateVersion and ListVersions return sparse responses (no modelName/depSnapshot).
+    # GetVersion/GetLatestVersion/ConfirmVersion return the full object.
+    dep_snapshot = (
+        _parse_dep_snapshot(raw["depSnapshot"])
+        if "depSnapshot" in raw
+        else DepSnapshot(
+            python_version="",
+            framework=FrameworkInfo(name="", version=""),
+            packages={},
+            os="",
+            captured_at="",
+        )
+    )
     return Version(
-        model_name=raw["modelName"],
+        model_name=raw.get("modelName", ""),
         version=raw["version"],
         status=raw["status"],
-        dep_snapshot=_parse_dep_snapshot(raw["depSnapshot"]),
-        created_at=raw["createdAt"],
+        dep_snapshot=dep_snapshot,
+        created_at=raw.get("createdAt", ""),
         upload_url=raw.get("uploadUrl"),
         upload_url_expires_at=raw.get("uploadUrlExpiresAt"),
         download_url=raw.get("downloadUrl"),
@@ -192,8 +205,10 @@ class ArtifactMgmtClient:
         data: bytes,
         checksum_sha256: str | None = None,
     ) -> None:
-        _ = checksum_sha256  # checksum already sent to service at create_version time
-        self._http.upload(upload_url, data)
+        extra: dict[str, str] = {}
+        if checksum_sha256 is not None:
+            extra["x-amz-checksum-sha256"] = checksum_sha256
+        self._http.upload(upload_url, data, extra_headers=extra or None)
 
     # ------------------------------------------------------------------
     # ConfirmVersion (internal — called by save_model)
@@ -226,7 +241,7 @@ class ArtifactMgmtClient:
 
         data = ser.serialize(model)
         checksum_sha256 = base64.b64encode(hashlib.sha256(data).digest()).decode()
-        snapshot = _capture_snapshot(model, override=dep_snapshot)
+        snapshot = _capture_snapshot(model, override=dep_snapshot, serializer=ser)
         idempotency_key = str(uuid.uuid4())
 
         version_obj = self._create_version(

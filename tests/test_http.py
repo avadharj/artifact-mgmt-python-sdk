@@ -221,3 +221,20 @@ class TestUpload:
         responses_lib.add(responses_lib.PUT, "https://s3.example.com/upload", status=403, body="forbidden")
         with pytest.raises(AuthError):
             client.upload("https://s3.example.com/upload", b"data")
+
+    @responses_lib.activate
+    def test_upload_sends_extra_headers(self, client: HttpClient) -> None:
+        responses_lib.add(responses_lib.PUT, "https://s3.example.com/upload", status=200)
+        client.upload(
+            "https://s3.example.com/upload",
+            b"data",
+            extra_headers={"x-amz-checksum-sha256": "abc123"},
+        )
+        assert responses_lib.calls[0].request.headers["x-amz-checksum-sha256"] == "abc123"
+
+    @responses_lib.activate
+    def test_upload_without_extra_headers_still_sets_content_type(self, client: HttpClient) -> None:
+        responses_lib.add(responses_lib.PUT, "https://s3.example.com/upload", status=200)
+        client.upload("https://s3.example.com/upload", b"data")
+        assert responses_lib.calls[0].request.headers["Content-Type"] == "application/octet-stream"
+        assert "x-amz-checksum-sha256" not in responses_lib.calls[0].request.headers

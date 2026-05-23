@@ -103,10 +103,13 @@ class HttpClient:
             return {}
         return response.json()  # type: ignore[no-any-return]
 
-    def upload(self, upload_url: str, data: bytes) -> None:
+    def upload(self, upload_url: str, data: bytes, extra_headers: dict[str, str] | None = None) -> None:
+        headers: dict[str, str] = {"Content-Type": "application/octet-stream"}
+        if extra_headers:
+            headers.update(extra_headers)
         response = requests.put(
             upload_url,
             data=data,
-            headers={"Content-Type": "application/octet-stream"},
+            headers=headers,
         )
         _raise_for_response(response)
