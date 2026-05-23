@@ -1,4 +1,5 @@
 from artifact_mgmt.client import ArtifactMgmtClient
+from artifact_mgmt._artifact_model import ArtifactModel
 from artifact_mgmt._types import FrameworkInfo, DepSnapshot, Model, Version
 from artifact_mgmt._exceptions import (
     ArtifactMgmtError,
@@ -17,6 +18,7 @@ from artifact_mgmt._exceptions import (
 
 __all__ = [
     "ArtifactMgmtClient",
+    "ArtifactModel",
     "FrameworkInfo",
     "DepSnapshot",
     "Model",

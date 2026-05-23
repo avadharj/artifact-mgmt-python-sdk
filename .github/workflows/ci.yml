@@ -25,6 +25,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Check lockfile is up to date
+        if: matrix.python-version == '3.12'
         run: |
           pip install pip-tools
           pip-compile --generate-hashes --allow-unsafe requirements.in -o /tmp/req-check.txt
