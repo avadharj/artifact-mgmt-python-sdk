@@ -22,7 +22,7 @@ The primary public API is two methods — `save_model()` and `load_model()` — 
 - S3 presigned PUT requires `Content-Type: application/octet-stream` — omitting it → 403
 - S3 presigned PUT also requires `x-amz-checksum-sha256` header (same base64 SHA-256 digest as sent in `checksumSha256` to `CreateVersion`). The backend signs this header into the presigned URL; omitting it → 403 SignatureDoesNotMatch.
 - Version path param is dotted string `"1.0"`, never split into major/minor
-- `CreateVersion` and `ListVersions` return **sparse responses** — response bodies contain only `version`, `status`, and `createdAt`. Fields `modelName` and `depSnapshot` are absent from these responses. Full responses (all fields populated) come only from `GetVersion`, `GetLatestVersion`, and `ConfirmVersion`. Parse with `.get()` and defaults everywhere to handle both sparse and full shapes.
+- `CreateVersion`, `ListVersions`, and `ListModels` return **sparse responses** — list/create endpoints omit fields like `createdAt`, `updatedAt`, `owner`, `modelName`, `depSnapshot`. Full responses (all fields populated) come only from `GetVersion`, `GetLatestVersion`, `GetModel`, and `ConfirmVersion`. Parse every field with `.get()` and a safe default; never use bare `raw["field"]` on a response that could come from a list endpoint.
 
 ---
 
