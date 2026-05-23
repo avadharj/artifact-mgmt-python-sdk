@@ -66,3 +66,7 @@ dmypy.json
 # Claude Code
 .claude/
 CLAUDE.md
+
+# Stray Node artifacts — this is a Python repo; these have no place here
+package-lock.json
+node_modules/
