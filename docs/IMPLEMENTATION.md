@@ -15,12 +15,14 @@ The primary public API is two methods — `save_model()` and `load_model()` — 
 - AWS credentials via boto3 default chain (env vars → `~/.aws/credentials` → IAM role)
 - `promote_model()` is the cross-stage promotion primitive — it loads from a source stage and saves to a destination stage in one call. Each stage is a fully isolated silo (separate DDB tables + S3 bucket); there is no automatic cross-stage sync.
 
-**Live API gotchas:**
+**Live API gotchas:** *(discovered by live-testing against gamma — treat these as harder than the Smithy IDL)*
 - `ListModels` response key is `"items"`, `ListVersions` is `"versions"`
 - `ConfirmVersion` is `PUT` (not POST), body must be `{}`
 - `checksumSha256` must be base64-encoded SHA-256, not hex
 - S3 presigned PUT requires `Content-Type: application/octet-stream` — omitting it → 403
+- S3 presigned PUT also requires `x-amz-checksum-sha256` header (same base64 SHA-256 digest as sent in `checksumSha256` to `CreateVersion`). The backend signs this header into the presigned URL; omitting it → 403 SignatureDoesNotMatch.
 - Version path param is dotted string `"1.0"`, never split into major/minor
+- `CreateVersion` and `ListVersions` return **sparse responses** — response bodies contain only `version`, `status`, and `createdAt`. Fields `modelName` and `depSnapshot` are absent from these responses. Full responses (all fields populated) come only from `GetVersion`, `GetLatestVersion`, and `ConfirmVersion`. Parse with `.get()` and defaults everywhere to handle both sparse and full shapes.
 
 ---
 
@@ -237,12 +239,13 @@ Status → exception mapping:
 - 409 + `code: "ChecksumMismatch"` → `ChecksumMismatchError`
 - 5xx → `ServiceError`
 
-S3 upload is a plain `requests.put()` (no SigV4 — URL is already signed). Must include `Content-Type: application/octet-stream`.
+S3 upload is a plain `requests.put()` (no SigV4 — URL is already signed). Must include `Content-Type: application/octet-stream` **and** `x-amz-checksum-sha256` (the base64 SHA-256 digest of the payload — same value passed to `CreateVersion` as `checksumSha256`). The presigned URL is signed with this header by the backend; omitting it causes SignatureDoesNotMatch.
 
 **AC:**
 - All status → exception mappings covered
 - Unit tests use `responses` library to mock HTTP; no real network calls
 - S3 upload helper sets correct Content-Type header
+- S3 upload helper sends `x-amz-checksum-sha256` header when checksum is provided
 - boto3 credential chain used (env vars → `~/.aws/credentials` → IAM role)
 - Coverage ≥ 90% on `_http.py`
 

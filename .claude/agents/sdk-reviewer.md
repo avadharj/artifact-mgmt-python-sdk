@@ -33,7 +33,7 @@ If you can't verify an AC item from the diff or the running tests, the story is 
 Pay particular attention to AC items that mention specific values, edge cases, or non-obvious behaviors — those are where drift happens silently. Quote the actual code or test line that satisfies each one.
 
 Also verify:
-- Tests follow Given-When-Then structure (named or structured as such).
+- Tests follow Given-When-Then structure (named and structured as such).
 - Type annotations present on all public functions and methods.
 - No bare `except:` clauses — only specific exception types.
 - `__getattr__` forwarding (Story 5.1): verify it raises `AttributeError` for missing attrs, not silently returns `None`.
@@ -120,6 +120,7 @@ Verified:
 - mypy: clean
 - Scope: in-scope only
 - Tests run: [pytest exit code, pass/fail count]
+- Clean coding principles are accurately followed
 ```
 
 **FAIL**
