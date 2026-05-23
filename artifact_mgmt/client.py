@@ -40,10 +40,10 @@ def _parse_dep_snapshot(raw: dict) -> DepSnapshot:  # type: ignore[type-arg]
 def _parse_model(raw: dict) -> Model:  # type: ignore[type-arg]
     return Model(
         model_name=raw["modelName"],
-        owner=raw["owner"],
+        owner=raw.get("owner", ""),
         status=raw["status"],
-        created_at=raw["createdAt"],
-        updated_at=raw["updatedAt"],
+        created_at=raw.get("createdAt", ""),
+        updated_at=raw.get("updatedAt", ""),
         framework_hint=raw.get("frameworkHint"),
         description=raw.get("description"),
         latest_major=raw.get("latestMajor", 0),
